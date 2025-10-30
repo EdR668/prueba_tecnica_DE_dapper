@@ -210,7 +210,7 @@ AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/a
 
 ## Autor
 
-Desarrollado por: [Tu Nombre]  
-Contacto: [tu-email@ejemplo.com]  
+Desarrollado por: Eder José Hernández Buelvas
+Contacto: ederhernandez667@gmail.com
 Fecha: Octubre 2025  
 Organización: Dapper – Prueba Técnica
