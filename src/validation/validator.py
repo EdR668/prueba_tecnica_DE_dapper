@@ -7,19 +7,64 @@ def load_rules(path="src/validation/rules.json"):
 import re
 import json
 
-def validate_dataframe(df):
-    """
-    Valida el dataframe según las reglas en rules.json.
-    Retorna dos dataframes: (válidos, inválidos)
-    """
-    import pandas as pd
-    from pathlib import Path
+import json
+import re
+import pandas as pd
+from pathlib import Path
 
-    rules_path = Path(__file__).parent / "rules.json"
-    with open(rules_path, "r") as f:
-        rules = json.load(f)
+def _is_empty(value) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and pd.isna(value):
+        return True
+    if isinstance(value, str) and value.strip() == "":
+        return True
+    return False
 
-    print("🧾 Cargando reglas de validación:")
+def _type_ok(value, expected_type: str) -> bool:
+    """
+    Valida tipo de forma básica y predecible sin castear:
+      - "string": debe ser str
+      - "int": debe ser int (no float con .0)
+      - "float": debe ser float o int (permitimos int como float válido)
+      - "boolean": debe ser bool
+      - "date": lo validará el regex (aquí solo se permite str o datetime formateado a str previamente)
+    """
+    if _is_empty(value):
+        return True  # vacío se evalúa en otra regla (required)
+    if expected_type == "string":
+        return isinstance(value, str)
+    if expected_type == "int":
+        return isinstance(value, int) and not isinstance(value, bool)  # bool es subclass de int
+    if expected_type == "float":
+        return isinstance(value, (float, int)) and not isinstance(value, bool)
+    if expected_type == "boolean":
+        return isinstance(value, bool)
+    if expected_type == "date":
+        # El chequeo real vendrá por regex (YYYY-MM-DD). Aquí permitimos str.
+        return isinstance(value, str)
+    # Si no se reconoce el tipo, no lo invalidamos por tipo.
+    return True
+
+def load_rules(path: str = None) -> dict:
+    if path is None:
+        path = Path(__file__).parent / "rules.json"
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+def validate_dataframe(df: pd.DataFrame, rules_path: str = None):
+    """
+    Aplica reglas de validación por campo (tipo, regex, obligatoriedad).
+
+    Reglas:
+      - Si un campo no cumple tipo o regex → ese campo se borra (None/NULL).
+      - Si un campo obligatorio falta o no cumple → descartar fila completa.
+
+    Retorna: (valid_df, invalid_df)
+    """
+    rules = load_rules(rules_path)
+
+    print("Cargando reglas de validación:")
     for col, r in rules.items():
         print(f"  - {col}: {r}")
 
@@ -27,42 +72,56 @@ def validate_dataframe(df):
     invalid_rows = []
 
     for idx, row in df.iterrows():
-        row_valid = True
-        reasons = []  # para guardar por qué se rechaza
+        row_dict = row.to_dict()
+        row_invalid = False
+        reasons = []
 
         for field, rule in rules.items():
-            value = row.get(field)
+            value = row_dict.get(field, None)
 
-            # Si es obligatorio pero no tiene valor
-            if rule.get("required") and (pd.isna(value) or value == ""):
+            # 1) Campo requerido: si está vacío → fila inválida
+            if rule.get("required", False) and _is_empty(value):
                 reasons.append(f"{field}: requerido pero vacío")
-                row_valid = False
+                row_invalid = True
+                # No hace falta seguir validando este campo; pero seguimos con otros para log completo
                 continue
 
-            # Si hay un tipo esperado
-            expected_type = rule.get("type")
-            if expected_type and not pd.isna(value):
-                if expected_type == "string" and not isinstance(value, str):
-                    reasons.append(f"{field}: esperaba string, obtuvo {type(value).__name__}")
-                    row_valid = False
-                elif expected_type == "int" and not isinstance(value, int):
-                    reasons.append(f"{field}: esperaba int, obtuvo {type(value).__name__}")
+            # 2) Tipo: si no cumple y NO está vacío → campo a None; si era requerido → fila inválida
+            expected_type = rule.get("type", None)
+            if expected_type and not _is_empty(value) and not _type_ok(value, expected_type):
+                if rule.get("required", False):
+                    reasons.append(f"{field}: no cumple tipo ({expected_type})")
+                    row_invalid = True
+                else:
+                    reasons.append(f"{field}: opcional, no cumple tipo → limpiado")
+                    row_dict[field] = None  # borrar campo
+                # seguimos para evaluar regex (aunque ya queda None si opcional)
 
-            # Si hay un patrón regex
-            pattern = rule.get("regex")
-            if pattern and isinstance(value, str):
-                if not re.match(pattern, value):
-                    reasons.append(f"{field}: no cumple regex {pattern}")
-                    row_valid = False
+            # 3) Regex: si no cumple y NO está vacío → campo a None; si era requerido → fila inválida
+            pattern = rule.get("regex", None)
+            if pattern and not _is_empty(row_dict.get(field)):
+                val = row_dict.get(field)
+                if isinstance(val, str):
+                    if not re.match(pattern, val):
+                        if rule.get("required", False):
+                            reasons.append(f"{field}: no cumple regex {pattern}")
+                            row_invalid = True
+                        else:
+                            reasons.append(f"{field}: opcional, no cumple regex → limpiado")
+                            row_dict[field] = None
+                else:
+                    # Si hay regex pero el valor no es string, ya falló tipo antes;
+                    # si es requerido, ya marcamos fila inválida; si opcional, lo dejamos None.
+                    pass
 
-        if row_valid:
-            valid_rows.append(row)
+        if row_invalid:
+            invalid_rows.append(row_dict)
+            print(f"Fila {idx} rechazada → {', '.join(reasons)}")
         else:
-            invalid_rows.append(row)
-            print(f"❌ Fila {idx} rechazada → {', '.join(reasons)}")
+            valid_rows.append(row_dict)
 
     valid_df = pd.DataFrame(valid_rows)
     invalid_df = pd.DataFrame(invalid_rows)
 
-    print(f"✅ Validados {len(valid_df)} registros; ❌ descartados {len(invalid_df)}.")
+    print(f"Validados {len(valid_df)} registros; descartados {len(invalid_df)}.")
     return valid_df, invalid_df

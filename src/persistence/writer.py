@@ -20,163 +20,164 @@ def insert_regulations_component(db_manager, new_ids):
         return 0, f"Error inserting regulation components: {str(e)}"
 
 
+
 def insert_new_records(db_manager, df, entity):
     """
     Inserta nuevos registros en la base de datos evitando duplicados.
-    Optimizada para velocidad y precisión.
+    Conserva la lógica de idempotencia (title|created_at|external_link),
+    no muta tipos reales del DF que va a BD y sanea 'NaT'/'NaN'/'' -> None
+    antes de insertar para evitar errores de tipos en Postgres.
     """
     regulations_table_name = 'regulations'
-    
+
     try:
-        # 1. OBTENER REGISTROS EXISTENTES INCLUYENDO EXTERNAL_LINK
-        query = """
-            SELECT title, created_at, entity, COALESCE(external_link, '') as external_link 
-            FROM {} 
+        # 1) Cargar existentes para el entity (incluyendo external_link)
+        query = f"""
+            SELECT title, created_at, entity, COALESCE(external_link, '') AS external_link
+            FROM {regulations_table_name}
             WHERE entity = %s
-        """.format(regulations_table_name)
-        
+        """
         existing_records = db_manager.execute_query(query, (entity,))
-        
         if not existing_records:
             db_df = pd.DataFrame(columns=['title', 'created_at', 'entity', 'external_link'])
         else:
             db_df = pd.DataFrame(existing_records, columns=['title', 'created_at', 'entity', 'external_link'])
-        
+
         print(f"Registros existentes en BD para {entity}: {len(db_df)}")
-        
-        # 2. PREPARAR DATAFRAME DE LA ENTIDAD
+
+        # 2) Filtrar el DF por la entidad
         entity_df = df[df['entity'] == entity].copy()
-        
         if entity_df.empty:
             return 0, f"No records found for entity {entity}"
-        
+
         print(f"Registros a procesar para {entity}: {len(entity_df)}")
-        
-        # 3. NORMALIZAR DATOS PARA COMPARACIÓN CONSISTENTE
-        # Normalizar created_at a string
-        if not db_df.empty:
-            db_df['created_at'] = db_df['created_at'].astype(str)
-            db_df['external_link'] = db_df['external_link'].fillna('').astype(str)
-            db_df['title'] = db_df['title'].astype(str).str.strip()
-        
-        entity_df['created_at'] = entity_df['created_at'].astype(str)
-        entity_df['external_link'] = entity_df['external_link'].fillna('').astype(str)
-        entity_df['title'] = entity_df['title'].astype(str).str.strip()
-        
-        # 4. IDENTIFICAR DUPLICADOS DE MANERA OPTIMIZADA
-        print("=== INICIANDO VALIDACIÓN DE DUPLICADOS OPTIMIZADA ===")
-        
-        if db_df.empty:
-            # Si no hay registros existentes, todos son nuevos
-            new_records = entity_df.copy()
+
+        # 3) Normalización para comparación (NO mutar el DF real que irá a BD)
+        cmp_entity_df = entity_df.copy()
+        cmp_db_df = db_df.copy()
+
+        if not cmp_db_df.empty:
+            cmp_db_df['created_at'] = cmp_db_df['created_at'].astype(str)
+            cmp_db_df['external_link'] = cmp_db_df['external_link'].fillna('').astype(str)
+            cmp_db_df['title'] = cmp_db_df['title'].astype(str).str.strip()
+
+        cmp_entity_df['created_at'] = cmp_entity_df['created_at'].astype(str)
+        cmp_entity_df['external_link'] = cmp_entity_df['external_link'].fillna('').astype(str)
+        cmp_entity_df['title'] = cmp_entity_df['title'].astype(str).str.strip()
+
+        # 4) Idempotencia con clave única sobre copias de comparación
+        if cmp_db_df.empty:
+            new_records = entity_df.copy()  # ¡Original, sin cambios de tipo!
             duplicates_found = 0
             print("No hay registros existentes, todos son nuevos")
         else:
-            # Crear claves únicas para comparación super rápida
-            entity_df['unique_key'] = (
-                entity_df['title'] + '|' + 
-                entity_df['created_at'] + '|' + 
-                entity_df['external_link']
+            cmp_entity_df['unique_key'] = (
+                cmp_entity_df['title'] + '|' +
+                cmp_entity_df['created_at'] + '|' +
+                cmp_entity_df['external_link']
             )
-            
-            db_df['unique_key'] = (
-                db_df['title'] + '|' + 
-                db_df['created_at'] + '|' + 
-                db_df['external_link']
+            cmp_db_df['unique_key'] = (
+                cmp_db_df['title'] + '|' +
+                cmp_db_df['created_at'] + '|' +
+                cmp_db_df['external_link']
             )
-            
-            # Usar set para comparación O(1) - súper rápido
-            existing_keys = set(db_df['unique_key'])
-            entity_df['is_duplicate'] = entity_df['unique_key'].isin(existing_keys)
-            
-            new_records = entity_df[~entity_df['is_duplicate']].copy()
+
+            existing_keys = set(cmp_db_df['unique_key'])
+            cmp_entity_df['is_duplicate'] = cmp_entity_df['unique_key'].isin(existing_keys)
+
+            keep_idx = cmp_entity_df.index[~cmp_entity_df['is_duplicate']]
+            new_records = entity_df.loc[keep_idx].copy()  # Original, sin astype(str)
             duplicates_found = len(entity_df) - len(new_records)
-            
-            # Log para debugging
+
             if duplicates_found > 0:
                 print(f"Duplicados encontrados: {duplicates_found}")
-                duplicate_records = entity_df[entity_df['is_duplicate']]
+                duplicate_records = cmp_entity_df[cmp_entity_df['is_duplicate']]
                 print("Ejemplos de duplicados:")
-                for idx, row in duplicate_records.head(3).iterrows():
+                for _, row in duplicate_records.head(3).iterrows():
                     print(f"  - {row['title'][:50]}... | {row['created_at']}")
-        
-        # 5. REMOVER DUPLICADOS INTERNOS DEL DATAFRAME
+
+        # 5) Duplicados internos (sobre original)
         print(f"Antes de remover duplicados internos: {len(new_records)}")
         new_records = new_records.drop_duplicates(
-            subset=['title', 'created_at', 'external_link'], 
+            subset=['title', 'created_at', 'external_link'],
             keep='first'
         )
         internal_duplicates = len(entity_df) - duplicates_found - len(new_records)
         if internal_duplicates > 0:
             print(f"Duplicados internos removidos: {internal_duplicates}")
-        
+
         print(f"Después de remover duplicados internos: {len(new_records)}")
         print(f"=== DUPLICADOS IDENTIFICADOS: {duplicates_found + internal_duplicates} ===")
-        
+
         if new_records.empty:
             return 0, f"No new records found for entity {entity} after duplicate validation"
-        
-        # 6. LIMPIAR DATAFRAME ANTES DE INSERTAR
-        # Remover columnas auxiliares
-        columns_to_drop = ['unique_key', 'is_duplicate']
-        for col in columns_to_drop:
-            if col in new_records.columns:
-                new_records = new_records.drop(columns=[col])
-        
+
+        # 6) Limpieza estricta de valores antes de insertar (NaT/NaN/'' -> None)
+        def _clean_value(v):
+            import pandas as pd
+            if v is None:
+                return None
+            # NaN/NaT (pandas)
+            if pd.isna(v):
+                return None
+            if isinstance(v, str) and v.strip() in ("", "NaT", "NaN", "nan"):
+                return None
+            return v
+
+        new_records = new_records.applymap(_clean_value)
+
+        # created_at compatible con DATE: Timestamp -> date, '' -> None
+        if 'created_at' in new_records.columns:
+            new_records['created_at'] = new_records['created_at'].apply(
+                lambda x: (x.date() if hasattr(x, 'date') else (None if isinstance(x, str) and x.strip() == "" else x))
+            )
+
         print(f"Registros finales a insertar: {len(new_records)}")
-        
-        # 7. INSERTAR NUEVOS REGISTROS
+
+        # 7) Insertar nuevos registros
         try:
             print(f"=== INSERTANDO {len(new_records)} REGISTROS ===")
-            
             total_rows_processed = db_manager.bulk_insert(new_records, regulations_table_name)
-            
+
             if total_rows_processed == 0:
                 return 0, f"No records were actually inserted for entity {entity}"
-            
+
             print(f"Registros insertados exitosamente: {total_rows_processed}")
-            
+
         except Exception as insert_error:
             print(f"Error en inserción: {insert_error}")
-            # Si es error de duplicados, algunos se escaparon
-            if "duplicate" in str(insert_error).lower() or "unique" in str(insert_error).lower():
+            # Si es error por duplicados, reportar sin romper
+            lower_msg = str(insert_error).lower()
+            if "duplicate" in lower_msg or "unique" in lower_msg:
                 print("Error de duplicados detectado - algunos registros ya existían")
                 return 0, f"Some records for entity {entity} were duplicates and skipped"
             else:
                 raise insert_error
-        
-        # 8. OBTENER IDS DE REGISTROS INSERTADOS - MÉTODO OPTIMIZADO
+
+        # 8) Obtener IDs de recién insertados (método simple)
         print("=== OBTENIENDO IDS DE REGISTROS INSERTADOS ===")
-        
-        # Método simple y eficiente - obtener los últimos N IDs
         new_ids_query = f"""
             SELECT id FROM {regulations_table_name}
-            WHERE entity = %s 
+            WHERE entity = %s
             ORDER BY id DESC
             LIMIT %s
         """
-        
-        new_ids_result = db_manager.execute_query(
-            new_ids_query, 
-            (entity, total_rows_processed)
-        )
+        new_ids_result = db_manager.execute_query(new_ids_query, (entity, total_rows_processed))
         new_ids = [row[0] for row in new_ids_result]
-        
         print(f"IDs obtenidos: {len(new_ids)}")
-        
-        # 9. INSERTAR COMPONENTES DE REGULACIÓN
+
+        # 9) Insertar componentes (si aplica)
         inserted_count_comp = 0
         component_message = ""
-        
-        if new_ids:
-            try:
+        try:
+            if new_ids:
                 inserted_count_comp, component_message = insert_regulations_component(db_manager, new_ids)
                 print(f"Componentes: {component_message}")
-            except Exception as comp_error:
-                print(f"Error insertando componentes: {comp_error}")
-                component_message = f"Error inserting components: {str(comp_error)}"
-        
-        # 10. MENSAJE FINAL CON ESTADÍSTICAS DETALLADAS
+        except Exception as comp_error:
+            print(f"Error insertando componentes: {comp_error}")
+            component_message = f"Error inserting components: {str(comp_error)}"
+
+        # 10) Mensaje final
         total_duplicates = duplicates_found + internal_duplicates
         stats = (
             f"Processed: {len(entity_df)} | "
@@ -184,14 +185,13 @@ def insert_new_records(db_manager, df, entity):
             f"Duplicates skipped: {total_duplicates} | "
             f"New inserted: {total_rows_processed}"
         )
-        
         message = f"Entity {entity}: {stats}. {component_message}"
-        print(f"=== RESULTADO FINAL ===")
+        print("=== RESULTADO FINAL ===")
         print(message)
         print("=" * 50)
-        
+
         return total_rows_processed, message
-        
+
     except Exception as e:
         if hasattr(db_manager, 'connection') and db_manager.connection:
             db_manager.connection.rollback()

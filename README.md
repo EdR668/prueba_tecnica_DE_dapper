@@ -28,12 +28,6 @@ Esto:
 2. Reconstruye las imágenes.
 3. Inicializa Airflow y crea el usuario `admin / admin`.
 
----
-Nota: La proxima vez que se vaya a utilizar, es recomendable:
-### Levantar sin reconstruir
-```bash
-make up-airflow
-```
 
 ---
 
@@ -100,6 +94,12 @@ Ejemplo:
 ### Deshabilitar el sistema:
 ```bash
 make down-airflow
+```
+---
+Nota: La proxima vez que se vaya a utilizar el sistema, es recomendable usar el siguiente comando:
+### Levantar sin reconstruir
+```bash
+make up-airflow
 ```
 
 ## Estructura principal

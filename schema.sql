@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS regulations (
     id SERIAL PRIMARY KEY,
-    title TEXT NOT NULL,
+    title TEXT,
     summary TEXT,
     created_at DATE,
     entity TEXT,
