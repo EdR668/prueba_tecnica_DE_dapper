@@ -2,7 +2,7 @@ CREATE TABLE IF NOT EXISTS regulations (
     id SERIAL PRIMARY KEY,
     title TEXT,
     summary TEXT,
-    created_at DATE,
+    created_at TIMESTAMP,
     entity TEXT,
     external_link TEXT,
     classification_id INT,

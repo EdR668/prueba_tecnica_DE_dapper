@@ -75,7 +75,7 @@ def validate_dataframe(df: pd.DataFrame, rules_path: str = None):
         row_dict = row.to_dict()
         row_invalid = False
         reasons = []
-
+        
         for field, rule in rules.items():
             value = row_dict.get(field, None)
 
@@ -89,6 +89,7 @@ def validate_dataframe(df: pd.DataFrame, rules_path: str = None):
             # 2) Tipo: si no cumple y NO está vacío → campo a None; si era requerido → fila inválida
             expected_type = rule.get("type", None)
             if expected_type and not _is_empty(value) and not _type_ok(value, expected_type):
+                
                 if rule.get("required", False):
                     reasons.append(f"{field}: no cumple tipo ({expected_type})")
                     row_invalid = True
@@ -113,10 +114,12 @@ def validate_dataframe(df: pd.DataFrame, rules_path: str = None):
                     # Si hay regex pero el valor no es string, ya falló tipo antes;
                     # si es requerido, ya marcamos fila inválida; si opcional, lo dejamos None.
                     pass
-
+        if reasons:
+            estado = "rechazada" if row_invalid else "válida con ajustes"
+            print(f"🧾 Fila {idx} ({estado}) → {'; '.join(reasons)}")
+            
         if row_invalid:
             invalid_rows.append(row_dict)
-            print(f"Fila {idx} rechazada → {', '.join(reasons)}")
         else:
             valid_rows.append(row_dict)
 
