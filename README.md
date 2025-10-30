@@ -13,13 +13,13 @@ El objetivo es mantener la lógica original del scraping, agregar validación co
 
 ## Levantar el entorno
 
-### Requisitos
+### 1.Requisitos
 - Docker y Docker Compose instalados.
 - GNU Make instalado (`choco install make` en Windows o `brew install make` en macOS).
 
 ---
 
-### 🧩 Archivo `.env`
+###  2.Archivo `.env`
 
 Crea un archivo llamado `.env` en la **raíz del proyecto** con las variables necesarias para ejecutar el proyecto.
 
@@ -30,7 +30,9 @@ Ejemplo:
 PYTHONPATH=/opt/airflow/src
 ```
 
-### Instalación completa
+### 3.Instalación completa
+Ejecuta el siguiente comando para iniciar la instalación y ejecución
+
 ```bash
 make install
 ```
@@ -42,14 +44,14 @@ Esto:
 
 ---
 
-### Acceso
+### 4.Acceso
 - Interfaz de Airflow: [http://localhost:8080](http://localhost:8080)  
   Usuario: `admin`  
   Contraseña: `admin`
 
 ---
 
-### Ejecución del DAG
+### 5.Ejecución del DAG
 1. En la interfaz de Airflow, activa el DAG `dapper_pipeline`.
 2. Haz clic en **Trigger DAG** para ejecutarlo.
 3. Observa los logs de cada tarea (extract, validate, write).
