@@ -10,18 +10,53 @@ El objetivo es mantener la lógica original del scraping, agregar validación co
 
 ---
 
-## Estructura principal
+
+## Levantar el entorno
+
+### Requisitos
+- Docker y Docker Compose instalados.
+- GNU Make instalado (`choco install make` en Windows o `brew install make` en macOS).
+
+---
+
+### Instalación completa
+```bash
+make install
 ```
-/dags
- └── dapper_pipeline_dag.py     # DAG principal de Airflow
-/src
- ├── extraction/scraper.py      # Módulo de extracción
- ├── validation/validator.py    # Módulo de validación
- ├── validation/rules.json      # Reglas configurables de validación
- └── persistence/writer.py      # Módulo de escritura
-/configs
- └── schema.sql                 # Esquema base de la tabla destino
+Esto:
+1. Detiene cualquier contenedor anterior.
+2. Reconstruye las imágenes.
+3. Inicializa Airflow y crea el usuario `admin / admin`.
+
+---
+Nota: La proxima vez que se vaya a utilizar, es recomendable:
+### Levantar sin reconstruir
+```bash
+make up-airflow
 ```
+
+---
+
+### Acceso
+- Interfaz de Airflow: [http://localhost:8080](http://localhost:8080)  
+  Usuario: `admin`  
+  Contraseña: `admin`
+
+---
+
+### Ejecución del DAG
+1. En la interfaz de Airflow, activa el DAG `dapper_pipeline`.
+2. Haz clic en **Trigger DAG** para ejecutarlo.
+3. Observa los logs de cada tarea (extract, validate, write).
+
+---
+
+
+## Logs y resultados
+Los logs se almacenan en `./logs/` e incluyen:
+- Total de registros extraídos.
+- Filas descartadas por validación.
+- Filas insertadas en base de datos.
 
 ---
 
@@ -61,57 +96,24 @@ Ejemplo:
 
 ---
 
-## Levantar el entorno
 
-### Requisitos
-- Docker y Docker Compose instalados.
-- (Opcional) GNU Make instalado (`choco install make` en Windows o `brew install make` en macOS).
-
----
-
-### Instalación completa
+### Deshabilitar el sistema:
 ```bash
-make install
-```
-Esto:
-1. Detiene cualquier contenedor anterior.
-2. Reconstruye las imágenes.
-3. Inicializa Airflow y crea el usuario `admin / admin`.
-
----
-Nota: La proxima vez que se vaya a utilizar, es recomendable:
-### Levantar sin reconstruir
-```bash
-make up-airflow
+make down-airflow
 ```
 
----
-
-### Acceso
-- Interfaz de Airflow: [http://localhost:8080](http://localhost:8080)  
-  Usuario: `admin`  
-  Contraseña: `admin`
-
----
-
-### Ejecución del DAG
-1. En la interfaz de Airflow, activa el DAG `dapper_pipeline`.
-2. Haz clic en **Trigger DAG** para ejecutarlo.
-3. Observa los logs de cada tarea (extract, validate, write).
-
----
-
-### Base de datos
-El DAG escribe en la tabla `regulations` de la base Postgres incluida en el `docker-compose.yml`.  
-Si no existe, se crea automáticamente usando `configs/schema.sql`.
-
----
-
-## Logs y resultados
-Los logs se almacenan en `./logs/` e incluyen:
-- Total de registros extraídos.
-- Filas descartadas por validación.
-- Filas insertadas en base de datos.
+## Estructura principal
+```
+/dags
+ └── dapper_pipeline_dag.py     # DAG principal de Airflow
+/src
+ ├── extraction/scraper.py      # Módulo de extracción
+ ├── validation/validator.py    # Módulo de validación
+ ├── validation/rules.json      # Reglas configurables de validación
+ └── persistence/writer.py      # Módulo de escritura
+/configs
+ └── schema.sql                 # Esquema base de la tabla destino
+```
 
 ---
 
