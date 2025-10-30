@@ -1,7 +1,7 @@
 .PHONY: reset-airflow init-airflow up-airflow down-airflow start build-airflow install
 
 down-airflow:
-	docker-compose down --volumes
+	docker-compose down
 
 # Limpieza total opcional (comentado por seguridad)
 # reset-airflow: down-airflow
