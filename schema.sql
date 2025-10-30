@@ -11,3 +11,10 @@ CREATE TABLE IF NOT EXISTS regulations (
     is_active BOOLEAN DEFAULT TRUE,
     update_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE TABLE IF NOT EXISTS regulations_component (
+    id SERIAL PRIMARY KEY,
+    regulations_id INT NOT NULL REFERENCES regulations(id) ON DELETE CASCADE,
+    components_id INT NOT NULL
+);
