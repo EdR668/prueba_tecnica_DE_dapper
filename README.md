@@ -19,6 +19,17 @@ El objetivo es mantener la lógica original del scraping, agregar validación co
 
 ---
 
+### 🧩 Archivo `.env`
+
+Crea un archivo llamado `.env` en la **raíz del proyecto** con las variables necesarias para ejecutar el proyecto.
+
+Ejemplo:
+
+```bash
+# Variables de entorno
+PYTHONPATH=/opt/airflow/src
+```
+
 ### Instalación completa
 ```bash
 make install
